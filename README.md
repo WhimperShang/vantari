@@ -4,9 +4,9 @@ Supplements student exam PDFs with missing pages drawn from a fully-scanned blan
 
 ## How it works
 
-1. Load the blank exam PDF → render every page to an image → extract ORB descriptors for each page (these become the "fingerprints").
-2. For each student PDF, render every page and match it against every blank page using BFMatcher + ratio test. The blank page whose descriptors best match a student page is assigned as that page's identity (position in the exam).
-3. Any blank pages with no matching student page are inserted into the student PDF in the correct position, and the result is saved in-place.
+Vantari uses ORB feature matching to identify which pages of a student's scanned exam correspond 
+to pages in the blank exam. Any blank pages that have no matching student page are automatically 
+inserted back in the correct position. The student PDF is supplemented in-place.
 
 ## Installation
 
@@ -25,11 +25,8 @@ vantari blank.pdf a.pdf b.pdf         # explicit files
 vantari blank.pdf a.pdf ./students/   # mix and match
 ```
 
-Run `vantari --help` for all options (e.g. `--dry-run`, `--verbose`, and ORB/matching parameters).
+Run `vantari --help` for all options, including:
 
-## Roadmap
-
-- [ ] Page masking — ignore areas where students write and focus matching on fixed content (headers, questions, etc.)
-- [ ] ML-assisted mask generation
-- [ ] Interactive conflict resolution — prompt the user when pages can't be matched confidently
-- [ ] Auto-tuning of ORB and matching parameters based on user feedback
+- `--verbose` / `-v` — print per-page matching details
+- `--dry-run` / `-d` — analyse and report only, without modifying any files
+- `--dpi`, `--features`, `--lowe`, `--thresh` — tune the ORB matching parameters
