@@ -38,10 +38,10 @@ except ImportError:
 
 def generate_new_name(
     input_path: Path, 
-    removed_pages: list[int],
+    removed_indices: list[int],
     ) -> str:
 
-    *head, tail = removed_pages
+    *head, tail = [i + 1 for i in removed_indices]  # convert to 1-based page numbers
     missing_tag = ", ".join(str(n) for n in head) + (f" & {tail}" if head else str(tail))
         
     return f"{input_path.stem} (missing {missing_tag}){input_path.suffix}"
@@ -67,36 +67,61 @@ def remove_random_pages(
         Path to the output PDF, or None if the file was skipped.
     """
     
-    doc = fitz.open(str(input_path))
-    total_pages = len(doc)
+    with fitz.open(str(input_path)) as doc:
+        total_pages = len(doc)
 
-    if total_pages <= num_remove:
-        print(
-            f"  ⚠  Skipping '{input_path.name}': only {total_pages} page(s), can't remove {num_remove}."
-        )
-        doc.close()
-        return None
+        # Validate that there are enough pages to remove
+        if total_pages <= num_remove:
+            print(f"⚠ Skipping '{input_path.name}': only {total_pages} page(s), can't remove {num_remove}.")
+            return None
+        
+        # Remove pages in reverse order to avoid index shifting issues
+        removed_indices = sorted(rng.sample(range(total_pages), num_remove))
+        for i in reversed(removed_indices):
+            doc.delete_page(i)
 
-    removed_indices = sorted(rng.sample(range(total_pages), num_remove))
-    removed_pages_1indexed = [i + 1 for i in removed_indices]
+        # Rename output file to include removed page numbers
+        new_name = generate_new_name(input_path, removed_indices)
+        output_path = output_dir / new_name
 
-    # Delete in reverse order so indices don't shift as pages are removed
-    for i in reversed(removed_indices):
-        doc.delete_page(i)
+        doc.save(str(output_path))
+        print(f"✔ Processed '{input_path.name}': saved to {output_path.name}.")
 
-    new_name = generate_new_name(input_path, removed_pages_1indexed)
-    output_path = output_dir / new_name
-
-    doc.save(str(output_path))
-    doc.close()
-
-    kept = total_pages - num_remove
-    print(
-        f"  ✓  {input_path.name}  →  {new_name}\n"
-        f"     Removed page(s): {removed_pages_1indexed}  |  "
-        f"Kept {kept}/{total_pages} pages"
-    )
     return output_path
+
+def collect_pdf_paths(
+    targets: list[str | Path], 
+    ) -> list[Path]:
+    
+    """
+    Collect and validate PDF paths from the provided targets
+    (files or directories), avoiding duplicates.
+
+    Args:
+        targets:    list of file or directory paths to search for PDFs
+
+    Returns:
+        list of resolved Paths to PDF files
+    """
+    
+    seen = set()
+    paths = []
+
+    for target in map(Path, targets):
+        target = target.resolve()
+        if target.is_dir():
+            candidates = sorted(target.glob("*.pdf"))
+        elif target.is_file() and target.suffix.lower() == ".pdf":
+            candidates = [target]
+        else:
+            sys.exit(f"Error: not a PDF file or directory: {target}")
+
+        for candidate in candidates:
+            if candidate not in seen:
+                seen.add(candidate)
+                paths.append(candidate)
+
+    return paths
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -107,7 +132,8 @@ def parse_args():
     )
     parser.add_argument(
         "input",
-        help="Path to a single PDF file OR a directory containing PDF files.",
+        nargs="+",
+        help="PDF file(s) and/or directory(ies) to process.",
     )
     parser.add_argument(
         "--num-remove", "-n",
@@ -135,37 +161,26 @@ def parse_args():
 def main():
     args = parse_args()
 
-    input_path = Path(args.input)
+    # Collect pdfs to process
+    targets: list[str | Path] = args.input or [Path.cwd()]
+    pdf_paths = collect_pdf_paths(targets)
+
+    # Setup the random generator and output directory
     rng = random.Random(args.seed)
-
-    # Collect PDF files to process
-    if input_path.is_dir():
-        pdf_files = sorted(input_path.glob("*.pdf"))
-        if not pdf_files:
-            print(f"No PDF files found in '{input_path}'.")
-            sys.exit(1)
-        default_output_dir = input_path
-    elif input_path.is_file() and input_path.suffix.lower() == ".pdf":
-        pdf_files = [input_path]
-        default_output_dir = input_path.parent
-    else:
-        print(f"Error: '{input_path}' is not a PDF file or a directory.")
-        sys.exit(1)
-
-    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir
+    output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nProcessing {len(pdf_files)} file(s) → output dir: {output_dir}\n")
+    print(f"\nProcessing {len(pdf_paths)} file(s) → output dir: {output_dir}\n")
 
-    success, skipped = 0, 0
-    for pdf in pdf_files:
-        result = remove_random_pages(pdf, output_dir, rng, args.num_remove)
+    processed, skipped = 0, 0
+    for path in pdf_paths:
+        result = remove_random_pages(path, output_dir, rng, args.num_remove)
         if result:
-            success += 1
+            processed += 1
         else:
             skipped += 1
 
-    print(f"\nDone. {success} processed, {skipped} skipped.")
+    print(f"\n{processed} pdfs processed, {skipped} skipped.")
 
 if __name__ == "__main__":
     main()

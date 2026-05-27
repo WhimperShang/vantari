@@ -266,7 +266,7 @@ def collect_student_paths(
     
     """
     Collect and validate student PDF paths from the provided targets
-    (files or directories), excluding the blank exam.
+    (files or directories), excluding the blank exam and avoiding duplicates.
 
     Args:
         targets:    list of file or directory paths to search for student PDFs
@@ -277,22 +277,23 @@ def collect_student_paths(
     """
     
     seen = set()
-    student_paths = []
-    for s in targets:
-        p = Path(s).resolve()
-        if p.is_dir():
-            candidates = sorted(f for f in p.glob("*.pdf") if f.resolve() != blank_path)
-        elif p.is_file():
-            candidates = [p]
+    paths = []
+
+    for target in map(Path, targets):
+        target = target.resolve()
+        if target.is_dir():
+            candidates = sorted(f for f in target.glob("*.pdf") if f.resolve() != blank_path)
+        elif target.is_file() and target.suffix.lower() == ".pdf":
+            candidates = [target]
         else:
-            sys.exit(f"Error: not a file or directory: {p}")
+            sys.exit(f"Error: not a PDF file or directory: {target}")
 
-        for c in candidates:
-            if c not in seen and c != blank_path:
-                seen.add(c)
-                student_paths.append(c)
+        for candidate in candidates:
+            if candidate not in seen and candidate != blank_path:
+                seen.add(candidate)
+                paths.append(candidate)
 
-    return student_paths
+    return paths
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -397,7 +398,7 @@ def main():
             if not student_path.is_file():
                 print(f"\n⚠  File not found, skipping: {student_path}")
                 continue
-            
+
             total_inserted += supplement_pdf(
                 student_path, blank_doc, blank_descriptors, 
                 verbose=args.verbose, 
