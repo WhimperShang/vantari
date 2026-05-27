@@ -36,11 +36,15 @@ FUTURE PLANS
 # ── Imports ──────────────────────────────────────────────────────────────────
 
 import argparse
-import cv2 as cv
-import fitz
-import numpy as np
 from pathlib import Path
 import sys
+
+try:
+    import cv2 as cv
+    import fitz
+    import numpy as np
+except ImportError as e:
+    sys.exit(f"Error: missing dependency — {e}. Run 'pip install -e .' to install.")
 
 # ── Type Aliases ─────────────────────────────────────────────────────────────
 
@@ -96,7 +100,7 @@ def match_score(
 
     """
     Count how many blank page descriptors are found in the student page.
-    Query direction is blank→student to treat blank descriptors as the subset to look for.
+    Query direction is blank → student to treat blank descriptors as the subset to look for.
 
     Args:
         blank_desciptors:       ORB descriptors for a single blank page
@@ -244,6 +248,7 @@ def collect_student_paths(
     targets: list[str | Path], 
     blank_path: Path,
     ) -> list[Path]:
+    
     """
     Collect and validate student PDF paths from the provided targets
     (files or directories), excluding the blank exam.
@@ -255,6 +260,7 @@ def collect_student_paths(
     Returns:
         list of resolved Paths to student PDF files
     """
+    
     seen = set()
     student_paths = []
     for s in targets:
@@ -276,7 +282,7 @@ def collect_student_paths(
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=(
             "Supplements student exam PDFs with missing pages drawn "
             "from a fully-scanned blank (empty) exam."
@@ -290,52 +296,52 @@ USAGE
     """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument(
+    parser.add_argument(
         "blank",
         metavar="BLANK_EXAM.pdf",
         help="Path to the fully-scanned blank (empty) exam PDF.",
     )
-    p.add_argument(
+    parser.add_argument(
         "students",
         nargs="*",
         metavar="STUDENT_OR_DIR",
         help="One or more student PDF files or a directory of PDFs to process.",
     )
-    p.add_argument(
+    parser.add_argument(
         "--dpi",
         type=int,
         default=DPI,
         help=f"Render resolution in DPI (default: {DPI}). Higher = more accurate but slower.",
     )
-    p.add_argument(
+    parser.add_argument(
         "--features",
         type=int,
         default=ORB_FEATURES,
         help=f"Max ORB keypoints per page (default: {ORB_FEATURES}).",
     )
-    p.add_argument(
+    parser.add_argument(
         "--lowe",
         type=float,
         default=LOWE_RATIO,
         help=f"Lowe ratio-test threshold (default: {LOWE_RATIO}).",
     )
-    p.add_argument(
+    parser.add_argument(
         "--match", "-m",
         type=float,
         default=MATCH_SCORE_THRESHOLD,
         help=f"Matching score threshold (default: {MATCH_SCORE_THRESHOLD}).",
     )
-    p.add_argument(
+    parser.add_argument(
         "--dry-run", "-d",
         action="store_true",
         help="Analyse and report only — do not modify any files.",
     )
-    p.add_argument(
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Print per-page matching details.",
     )
-    return p.parse_args()
+    return parser.parse_args()
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 

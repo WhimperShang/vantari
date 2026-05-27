@@ -4,33 +4,47 @@ remove_random_pages.py
 Takes scanned answer-paper PDFs, randomly removes a few pages,
 and encodes the removed page numbers into the output filename. (used for testing)
 
-Usage:
-    python remove_random_pages.py <input.pdf> [options]
+USAGE
+    python remove_random_pages.py <input.pdf> [options] # for a single file
+    python remove_random_pages.py <input_folder> [options] # for all PDFs in a folder
 
-Options:
-    --num-remove N      Number of pages to remove (default: 2)
-    --output-dir DIR    Directory to save output (default: same as input)
-    --seed N            Random seed for reproducibility (optional)
+    Run "python remove_random_pages.py --help" for all options, including:
+
+    --num-remove / -n       Number of pages to remove (default: 2)
+    --output-dir / -o       Directory to save output (default: same as input)
+    --seed / -s             Random seed for reproducibility (optional)
 
 OUTPUT FILENAME EXAMPLE
     StudentA_answers.pdf  →  StudentA_answers_MISSING_p3_p7.pdf
 
 DEPENDENCIES
-    pip install pypdf
+    pip install pymupdf
 """
 
+# ── Imports ──────────────────────────────────────────────────────────────────
+
 import argparse
-import os
 import random
 import sys
 from pathlib import Path
 
 try:
-    from pypdf import PdfReader, PdfWriter
+    import fitz
 except ImportError:
-    print("pypdf not found. Install it with:  pip install pypdf")
+    print("fitz not found. Install it with:  pip install pymupdf")
     sys.exit(1)
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def generate_new_name(
+    input_path: Path, 
+    removed_pages: list[int],
+    ) -> str:
+
+    *head, tail = removed_pages
+    missing_tag = ", ".join(str(n) for n in head) + (f" & {tail}" if head else str(tail))
+        
+    return f"{input_path.stem} (missing {missing_tag}){input_path.suffix}"
 
 def remove_random_pages(
     input_path: Path,
@@ -38,42 +52,43 @@ def remove_random_pages(
     rng: random.Random,
     num_remove: int = 2,
 ) -> Path | None:
+    
     """
-    Remove `num_remove` random pages from a PDF and save it with a
-    descriptive filename that lists the missing (1-indexed) page numbers.
+    Remove `num_remove` randomly selected pages from a PDF and save it
+    with the missing page numbers encoded in the filename.
 
-    Returns the output Path, or None if the file was skipped.
+    Args:
+        input_path: Path to the source PDF file.
+        output_dir: Directory to write the output PDF.
+        rng: Random instance to use for page selection.
+        num_remove: Number of pages to remove (default: 2).
+
+    Returns:
+        Path to the output PDF, or None if the file was skipped.
     """
-    rng = rng or random.Random()
-
-    reader = PdfReader(str(input_path))
-    total_pages = len(reader.pages)
+    
+    doc = fitz.open(str(input_path))
+    total_pages = len(doc)
 
     if total_pages <= num_remove:
         print(
-            f"  ⚠  Skipping '{input_path.name}': only {total_pages} page(s), "
-            f"can't remove {num_remove}."
+            f"  ⚠  Skipping '{input_path.name}': only {total_pages} page(s), can't remove {num_remove}."
         )
+        doc.close()
         return None
 
-    # Pick pages to remove (0-indexed internally)
     removed_indices = sorted(rng.sample(range(total_pages), num_remove))
-    removed_pages_1indexed = [i + 1 for i in removed_indices]   # human-readable
+    removed_pages_1indexed = [i + 1 for i in removed_indices]
 
-    # Build the output PDF
-    writer = PdfWriter()
-    for i, page in enumerate(reader.pages):
-        if i not in removed_indices:
-            writer.add_page(page)
+    # Delete in reverse order so indices don't shift as pages are removed
+    for i in reversed(removed_indices):
+        doc.delete_page(i)
 
-    # Encode missing pages in the filename
-    missing_tag = "_".join(f"p{n}" for n in removed_pages_1indexed)
-    stem = input_path.stem
-    new_name = f"{stem}_MISSING_{missing_tag}.pdf"
+    new_name = generate_new_name(input_path, removed_pages_1indexed)
     output_path = output_dir / new_name
 
-    with open(output_path, "wb") as f:
-        writer.write(f)
+    doc.save(str(output_path))
+    doc.close()
 
     kept = total_pages - num_remove
     print(
@@ -83,10 +98,12 @@ def remove_random_pages(
     )
     return output_path
 
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Randomly remove pages from scanned answer PDFs and "
-                    "record missing pages in the filename."
+        description="Takes scanned answer-paper PDFs, randomly removes a few pages,"
+                    "and encodes the removed page numbers into the output filename. (used for testing)"
     )
     parser.add_argument(
         "input",
@@ -106,12 +123,14 @@ def parse_args():
         help="Directory to write output PDFs (default: same as input file/folder).",
     )
     parser.add_argument(
-        "--seed",
+        "--seed", "-s",
         type=int,
         default=None,
         help="Random seed for reproducibility (optional).",
     )
     return parser.parse_args()
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     args = parse_args()
